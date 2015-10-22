@@ -1,0 +1,126 @@
+***Table***
+tbl_rd_order
+tbl_rd_order_item
+tbl_md_item
+
+tbl_his_order
+tbl_his_order_item
+tbl_md_activity_log
+
+#UpdateWoStatus from mobile
+APIWoLogic.java
+
+*Open Session
+*begin Transaction from session
+*open connection from session
+
+1.) ApiWOManager.getWoId(con,woNo) //Select => tbl_rd_order
+2.) MdActivityLogManager.setActivity()  
+     *open connection from JDBCUtil
+     //Insert => tbl_md_activity_log
+     *connection close
+3.) ApiWOManager.getCostIdByOrderId(conn,orderId) //Select => tbl_rd_order
+4.) ApiWOManager.getWoType(woNo,session) //Select => tbl_rd_order
+5.) ApiWOManager.getLastProcessStatus(orderType, orderId, processStatus, session) 
+     //Select => tbl_rd_order_item
+6.) ApiWOManager.addWoHis2(woBean, session)
+     *open connection from session
+     6.1 setWoDetail(session, orderid, woBean) //Select => tbl_rd_order
+     //Insert => tbl_his_order
+     //Select => his_auto_id
+7.) ApiWOManager.getWarehouseId(conn, orderId) //Select => tbl_rd_order
+
+============== SCAN_CHILD_N ============== 
+8.) ApiWOManager.getWhIdByOrderId(orderId, conn) //Select => tbl_rd_order
+8.1) ApiWOManager.getWoByRefAndWhId(woRef,whId,con) //Select => tbl_rd_order
+8.2) ApiWOManager.getItemStatus(ItemId,session) //Select => tbl_md_item
+
+======== Unitemize ========
+9.) MdItemManager.findItemByItemIdAPI(itemId, session) //Select => tbl_md_item
+9.1) ApiWOManager.getAltCodeByItemId(conn, itemId) //Select => tbl_md_item
+9.2) ApiWOManager.chkUnitemizeByOrderIdWithItemId(conn, orderId,itemId) //Select => tbl_rd_order_item
+9.3) ApiWOManager.chkUnitemizeOrderStatusNotIN_A_R(conn, orderId,itemId) 
+       //Select => tbl_rd_order_item,tbl_rd_order,tbl_md_item
+9.4) APIWoLogic.chkWarehouseBySubdoctypeAndCostIdByItemIdAndOrderId(itemId,orderId,session)
+       MdItemManager.findItemByItemIdAndSubdoctypeAPI //Select => tbl_md_item
+       RdOrderManager.findOrderById(id) //Select => tbl_rd_order
+       ApiWOManager.isMachItemDLine(conn, ItemId, orderId) //Select => tbl_md_item , tbl_rd_order
+       9.4.0 #Unitemize
+       9.4.1 #Account Un Compatible
+               ApiWOManager.getAltCodeByItemId (conn, ItemId) //Select => tbl_md_item
+        9.4.2 #No have in system
+                ApiWOManager.addItemHis2(item, conn) //Insert => tbl_his_order_item
+9.4.0-9.4.1) ApiWOManager.addItemTxn(unItemize, conn) //Insert => tbl_rd_order_item 
+                 ApiWOManager.updateMDItem (item, conn) //Update , select => tbl_md_item
+                 ApiWOManager.isFirstScan(altCode,session) //Select => tbl_md_item
+                       ApiWOManager.updateFirstScan(altCode,time,conn) //Update => tbl_md_item
+9.5) Validate Fail
+     ApiWOManager.addItemHis2(item, conn) //Insert => tbl_his_order_item
+======== Unitemize ========
+
+======== Update Folder / box ========
+10.) ApiWOManager.getAltCodeByItemId(conn,itemId) //Select => tbl_md_item
+      10.1) ApiWOManager.getItemByparentIdInRefWo(altCode, woRef, conn) 
+              //Select => tbl_rd_order_item,tbl_md_item,tbl_rd_order
+      10.2) ApiWOManager.getItemByparentIdInRefWo(parentId, woRef, conn) 
+              //Select => tbl_rd_order_item,tbl_md_item,tbl_rd_order
+      10.3) ApiWOManager.getRefCodeIdByItemId(ItemId,conn) //Select => tbl_md_item,tbl_rd_order_item
+      10.4) ApiWOManager.getDetailMomByAltCode(itemId, orderType, conn, orderId)
+              //Select => tbl_rd_order_item,tbl_md_item,tbl_rd_order
+              10.4.1) ApiWOManager.isFirstScan(altCode,session) //Select => tbl_md_item
+                             ApiWOManager.updateFirstScan(altCode,time,conn) //Update => tbl_md_item
+
+       10.5) ApiWOManager.updateWOStatusTxn(itemMom, conn) //Update => tbl_rd_order_item
+       10.6) ApiWOManager.updateMDItem(itemMom, conn) //Update => tbl_md_item
+       10.7) ApiWOManager.addItemHis2(itemMom, conn) //Insert => tbl_his_order_item
+
+       10.8) ApiWOManager.chkFlagUnitemize(conn,orderId,itemMom.getItemId()) //Select => tbl_rd_order_item
+======== Update Folder / box ========
+
+======== Update itemForUpdateList ( In while loop > for update status at have parentId ) ========
+       11.1) ApiWOManager.updateWOStatusTxn(itemB, conn) //Update => tbl_rd_order_item
+       11.2) ApiWOManager.updateMDItem(itemB, conn) //Update => tbl_md_item
+       11.3) ApiWOManager.addItemHis2(itemB, conn) //Insert => tbl_his_order_item
+======== Update itemForUpdateList ( In while loop > for update status at have parentId ) ========
+
+======== Update (orderType != AD Update Child Step 2-4) ========
+       12.1 ApiWOManager.getAllChildByParent(altCode, conn) //Select => tbl_md_item
+       12.2 ApiWOManager.getAllChildByParentAtKeepLoc(altCode, conn) //Select => tbl_md_item
+       12.3) ApiWOManager.updateMDItem(itemChild, conn) //Update => tbl_md_item
+       12.4) ApiWOManager.addItemHis2(itemChild, conn) //Insert => tbl_his_order_item
+======== Update (orderType != AD Update Child Step 2-4) ========
+
+======== Update Child Missing ========
+       13.1) ApiWOManager.getParentIdinWo(orderId, conn) //Select => tbl_rd_order_item,tbl_md_item
+       13.2) ApiWOManager.getItemIdByAltCode(conn,parentIdList.get(i)) //Select => tbl_md_item
+       13.3) ApiWOManager.getItemByparentIdInRefWo(parentIdList.get(i), woRef, conn)
+               //Select => tbl_rd_order_item,tbl_md_item,tbl_rd_order
+
+       13.4) ApiWOManager.updateMDItem(itemM, conn) //Update => tbl_md_item
+       13.5) ApiWOManager.updateWOStatusTxn(itemM, conn) //Update => tbl_rd_order_item
+       13.6) ApiWOManager.addItemHis2(itemM, conn) //Insert => tbl_his_order_item
+======== Update Child Missing ========
+
+======== Update Folder / Box Missing ========
+       14.1) ApiWOManager.getItemIdinWo(orderId, conn) //Select tbl_rd_order_item,tbl_md_item
+       14.2) ApiWOManager.getDetailMomByAltCode(itemIdList.get(i), orderType, conn, orderId)
+               //Select => tbl_rd_order_item,tbl_md_item,tbl_rd_order
+
+       14.3) ApiWOManager.updateMDItem(itemMom, conn) //Update => tbl_md_item
+       14.4) ApiWOManager.updateWOStatusTxn(itemMom, conn) //Update => tbl_rd_order_item
+       14.5) ApiWOManager.addItemHis2(itemMom, conn) //Insert => tbl_his_order_item
+======== Update Folder / Box Missing ========
+
+15.) ApiWOManager.updateWOProcessStatusInf(orderId, orderType, processStatus, finishDateTime, session)
+      //Update => tbl_rd_order
+
+============== SCAN_CHILD_N ============== 
+
+============== SCAN_CHILD_Y ============== 
+
+============== SCAN_CHILD_Y ==============
+
+*connection commit
+*Transaction commit
+*session close
+
